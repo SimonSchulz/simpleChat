@@ -27,27 +27,27 @@ function broadcast(roomId, data) {
     const room = rooms.get(roomId)
     if (!room) return
 
-    for (const clientId of room) {
-        const client = clients.get(clientId)
+    for (const id of room) {
+        const client = clients.get(id)
         if (client) send(client.ws, data)
     }
 }
 
-function joinRoom(clientId, roomId) {
+function join(id, roomId) {
     if (!rooms.has(roomId)) {
         rooms.set(roomId, new Set())
     }
 
-    rooms.get(roomId).add(clientId)
-    clients.get(clientId).roomId = roomId
+    rooms.get(roomId).add(id)
+    clients.get(id).roomId = roomId
 }
 
-function leaveRoom(clientId) {
-    const client = clients.get(clientId)
+function leave(id) {
+    const client = clients.get(id)
     if (!client?.roomId) return
 
     const room = rooms.get(client.roomId)
-    room?.delete(clientId)
+    room?.delete(id)
 
     if (room && room.size === 0) {
         rooms.delete(client.roomId)
@@ -61,44 +61,23 @@ wss.on('connection', (ws) => {
 
     clients.set(id, { ws, roomId: null })
 
-    console.log(`Connected: ${id}`)
-
     send(ws, {
         type: 'system',
         payload: { text: `Hello! Your id: ${id}` }
     })
 
-    ws.on('message', (message) => {
+    ws.on('message', (msg) => {
         try {
-            const data = JSON.parse(message.toString())
+            const data = JSON.parse(msg.toString())
 
             if (data.type === 'join') {
-                leaveRoom(id)
-                joinRoom(id, data.roomId)
+                leave(id)
+                join(id, data.roomId)
 
                 send(ws, {
                     type: 'system',
-                    payload: { text: `Joined room: ${data.roomId}` }
+                    payload: { text: `Joined ${data.roomId}` }
                 })
-
-                broadcast(data.roomId, {
-                    type: 'system',
-                    payload: { text: `User ${id} joined` }
-                })
-
-                return
-            }
-
-            if (data.type === 'leave') {
-                const roomId = clients.get(id)?.roomId
-                leaveRoom(id)
-
-                if (roomId) {
-                    broadcast(roomId, {
-                        type: 'system',
-                        payload: { text: `User ${id} left` }
-                    })
-                }
 
                 return
             }
@@ -109,13 +88,8 @@ wss.on('connection', (ws) => {
 
                 broadcast(roomId, {
                     type: 'message',
-                    payload: {
-                        text: data.text,
-                        user: id
-                    }
+                    payload: { text: data.text, user: id }
                 })
-
-                return
             }
 
             if (data.type === 'typing') {
@@ -126,10 +100,7 @@ wss.on('connection', (ws) => {
                     type: 'typing',
                     payload: { user: id }
                 })
-
-                return
             }
-
         } catch {
             send(ws, {
                 type: 'error',
@@ -139,24 +110,9 @@ wss.on('connection', (ws) => {
     })
 
     ws.on('close', () => {
-        const roomId = clients.get(id)?.roomId
-
-        leaveRoom(id)
+        leave(id)
         clients.delete(id)
-
-        if (roomId) {
-            broadcast(roomId, {
-                type: 'system',
-                payload: { text: `User ${id} disconnected` }
-            })
-        }
-
-        console.log(`Disconnected: ${id}`)
     })
-
-    ws.on('error', () => {})
 })
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on ${PORT}`)
-})
+server.listen(PORT, '0.0.0.0')
