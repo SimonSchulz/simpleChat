@@ -1,118 +1,32 @@
-import http from 'http';
-import { WebSocketServer } from 'ws';
-import { randomUUID } from 'crypto';
+import http from 'http'
+import { WebSocketServer } from 'ws'
 
-const server = http.createServer();
-const wss = new WebSocketServer({ server });
+const PORT = process.env.PORT || 3000
 
-const clients = new Set();
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' })
+    res.end('OK')
+})
 
-function send(ws, data) {
-    if (ws.readyState === ws.OPEN) {
-        ws.send(JSON.stringify(data));
-    }
-}
-
-function broadcast(data) {
-    for (const client of clients) {
-        send(client, data);
-    }
-}
+const wss = new WebSocketServer({ server })
 
 wss.on('connection', (ws) => {
-    const clientId = randomUUID();
-
-    ws.id = clientId;
-    clients.add(ws);
-
-    send(ws, {
-        type: 'system',
-        payload: {
-            text: `Welcome! Your id: ${clientId}`
-        }
-    });
-
-    broadcast({
-        type: 'system',
-        payload: {
-            text: `User ${clientId} connected`
-        }
-    });
-
     ws.on('message', (message) => {
-        try {
-            const text = message.toString().trim();
+        const text = message.toString()
 
-            if (text.startsWith('/')) {
-                handleCommand(ws, text);
-                return;
+        wss.clients.forEach((client) => {
+            if (client.readyState === 1) {
+                client.send(
+                    JSON.stringify({
+                        type: 'message',
+                        payload: { text }
+                    })
+                )
             }
+        })
+    })
+})
 
-            send(ws, {
-                type: 'echo',
-                payload: {
-                    text,
-                    time: new Date().toISOString()
-                }
-            });
-
-        } catch {
-            send(ws, {
-                type: 'error',
-                payload: { text: 'Invalid message' }
-            });
-        }
-    });
-
-    ws.on('close', () => {
-        clients.delete(ws);
-
-        broadcast({
-            type: 'system',
-            payload: {
-                text: `User ${clientId} disconnected`
-            }
-        });
-    });
-
-    ws.on('error', () => {});
-});
-
-function handleCommand(ws, text) {
-    const [cmd] = text.split(' ');
-
-    switch (cmd) {
-        case '/help':
-            send(ws, {
-                type: 'system',
-                payload: {
-                    text: 'Commands: /help, /ping, /whoami'
-                }
-            });
-            break;
-
-        case '/ping':
-            send(ws, {
-                type: 'system',
-                payload: { text: 'pong' }
-            });
-            break;
-
-        case '/whoami':
-            send(ws, {
-                type: 'system',
-                payload: { text: `Your id: ${ws.id}` }
-            });
-            break;
-
-        default:
-            send(ws, {
-                type: 'system',
-                payload: { text: 'Unknown command' }
-            });
-    }
-}
-
-const PORT = process.env.PORT || 3000;
-
-server.listen(PORT);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on ${PORT}`)
+})
