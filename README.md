@@ -9,4 +9,4 @@ npm start
 - Start: npm start
 
 ## Connect
-wss://your-app.onrender.com
+wss://simplechat-phc3.onrender.com
