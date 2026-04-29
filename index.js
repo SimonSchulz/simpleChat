@@ -1,6 +1,5 @@
 import http from 'http'
 import { WebSocketServer } from 'ws'
-import { randomUUID } from 'crypto'
 
 const PORT = process.env.PORT || 3000
 
@@ -14,92 +13,166 @@ const server = http.createServer((req, res) => {
 
 const wss = new WebSocketServer({ server })
 
-const clients = new Map()
-const rooms = new Map()
-
 function send(ws, data) {
     if (ws.readyState === 1) {
         ws.send(JSON.stringify(data))
     }
 }
 
-function broadcast(roomId, data) {
-    const room = rooms.get(roomId)
-    if (!room) return
-
-    for (const id of room) {
-        const client = clients.get(id)
-        if (client) send(client.ws, data)
-    }
+async function searchProducts(query) {
+    const res = await fetch(`https://dummyjson.com/products/search?q=${encodeURIComponent(query)}`)
+    return res.json()
 }
 
-function join(id, roomId) {
-    if (!rooms.has(roomId)) {
-        rooms.set(roomId, new Set())
-    }
-
-    rooms.get(roomId).add(id)
-    clients.get(id).roomId = roomId
-}
-
-function leave(id) {
-    const client = clients.get(id)
-    if (!client?.roomId) return
-
-    const room = rooms.get(client.roomId)
-    room?.delete(id)
-
-    if (room && room.size === 0) {
-        rooms.delete(client.roomId)
-    }
-
-    client.roomId = null
+function formatProduct(p) {
+    return `
+${p.title}
+Price: $${p.price}
+Brand: ${p.brand}
+Category: ${p.category}
+Rating: ${p.rating}
+Stock: ${p.stock}
+Return policy: ${p.returnPolicy}
+`.trim()
 }
 
 wss.on('connection', (ws) => {
-    const id = randomUUID()
+    let username = 'Guest'
+    let attempts = 0
+    let mode = 'search'
+    let lastResults = []
 
-    clients.set(id, { ws, roomId: null })
-
-    send(ws, {
-        type: 'system',
-        payload: { text: `Hello! Your id: ${id}` }
-    })
-
-    ws.on('message', (msg) => {
+    ws.on('message', async (msg) => {
         try {
             const data = JSON.parse(msg.toString())
 
-            if (data.type === 'join') {
-                leave(id)
-                join(id, data.roomId)
+            if (data.type === 'init') {
+                username = data.username || 'Guest'
+                attempts = 0
+                mode = 'search'
 
                 send(ws, {
                     type: 'system',
-                    payload: { text: `Joined ${data.roomId}` }
+                    payload: { text: `${username} connected` }
                 })
+
+                setTimeout(() => {
+                    send(ws, {
+                        type: 'bot',
+                        payload: {
+                            text: `Hello ${username}, enter a product name to search`
+                        }
+                    })
+                }, 800)
 
                 return
             }
 
             if (data.type === 'message') {
-                const roomId = clients.get(id)?.roomId
-                if (!roomId) return
+                const text = data.text.trim()
 
-                broadcast(roomId, {
-                    type: 'message',
-                    payload: { text: data.text, user: id }
-                })
-            }
+                send(ws, { type: 'typing' })
 
-            if (data.type === 'typing') {
-                const roomId = clients.get(id)?.roomId
-                if (!roomId) return
+                setTimeout(async () => {
+                    if (mode === 'select') {
+                        const index = Number(text)
 
-                broadcast(roomId, {
-                    type: 'typing',
-                    payload: { user: id }
-                })
+                        if (!isNaN(index) && lastResults[index - 1]) {
+                            const product = lastResults[index - 1]
+
+                            send(ws, {
+                                type: 'bot',
+                                payload: { text: formatProduct(product) }
+                            })
+
+                            mode = 'search'
+                            attempts = 0
+
+                            setTimeout(() => {
+                                send(ws, {
+                                    type: 'bot',
+                                    payload: {
+                                        text: 'You can search for another product'
+                                    }
+                                })
+                            }, 800)
+
+                            return
+                        } else {
+                            send(ws, {
+                                type: 'bot',
+                                payload: { text: 'Please enter a valid number from the list' }
+                            })
+                            return
+                        }
+                    }
+
+                    const result = await searchProducts(text)
+
+                    if (!result.products.length) {
+                        attempts++
+
+                        if (attempts >= 3) {
+                            send(ws, {
+                                type: 'bot',
+                                payload: {
+                                    text:
+                                        'Unfortunately, I cannot help you. Contact support:\nemail@example.com\n+48 123 456 789'
+                                }
+                            })
+
+                            attempts = 0
+
+                            setTimeout(() => {
+                                send(ws, {
+                                    type: 'bot',
+                                    payload: {
+                                        text: 'Try searching for a product again'
+                                    }
+                                })
+                            }, 800)
+
+                            return
+                        }
+
+                        send(ws, {
+                            type: 'bot',
+                            payload: {
+                                text:
+                                    'Sorry, no products found. Please try again'
+                            }
+                        })
+
+                        return
+                    }
+
+                    attempts = 0
+
+                    if (result.products.length === 1) {
+                        send(ws, {
+                            type: 'bot',
+                            payload: {
+                                text: formatProduct(result.products[0])
+                            }
+                        })
+
+                        return
+                    }
+
+                    lastResults = result.products.slice(0, 10)
+                    mode = 'select'
+
+                    const list = lastResults
+                        .map((p, i) => `${i + 1}. ${p.title} - $${p.price}`)
+                        .join('\n')
+
+                    send(ws, {
+                        type: 'bot',
+                        payload: {
+                            text: `Found multiple products:\n${list}\n\nEnter number`
+                        }
+                    })
+                }, 1000)
             }
         } catch {
             send(ws, {
@@ -107,11 +180,6 @@ wss.on('connection', (ws) => {
                 payload: { text: 'Invalid message' }
             })
         }
-    })
-
-    ws.on('close', () => {
-        leave(id)
-        clients.delete(id)
     })
 })
 
