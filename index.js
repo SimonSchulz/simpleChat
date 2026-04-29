@@ -24,18 +24,6 @@ async function searchProducts(query) {
     return res.json()
 }
 
-function formatProduct(p) {
-    return `
-${p.title}
-Price: $${p.price}
-Brand: ${p.brand}
-Category: ${p.category}
-Rating: ${p.rating}
-Stock: ${p.stock}
-Return policy: ${p.returnPolicy}
-`.trim()
-}
-
 wss.on('connection', (ws) => {
     let username = 'Guest'
     let attempts = 0
@@ -93,8 +81,16 @@ wss.on('connection', (ws) => {
 
                         if (product) {
                             send(ws, {
-                                type: 'bot',
-                                payload: { text: formatProduct(product) }
+                                type: 'product',
+                                payload: {
+                                    title: product.title,
+                                    price: product.price,
+                                    brand: product.brand,
+                                    category: product.category,
+                                    rating: product.rating,
+                                    stock: product.stock,
+                                    returnPolicy: product.returnPolicy
+                                }
                             })
 
                             mode = 'search'
@@ -137,7 +133,6 @@ wss.on('connection', (ws) => {
                             })
 
                             attempts = 0
-                            mode = 'search'
 
                             setTimeout(() => {
                                 send(ws, {
@@ -164,10 +159,18 @@ wss.on('connection', (ws) => {
                     attempts = 0
 
                     if (result.products.length === 1) {
+                        const p = result.products[0]
+
                         send(ws, {
-                            type: 'bot',
+                            type: 'product',
                             payload: {
-                                text: formatProduct(result.products[0])
+                                title: p.title,
+                                price: p.price,
+                                brand: p.brand,
+                                category: p.category,
+                                rating: p.rating,
+                                stock: p.stock,
+                                returnPolicy: p.returnPolicy
                             }
                         })
 
