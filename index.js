@@ -41,12 +41,16 @@ wss.on('connection', (ws) => {
     let attempts = 0
     let mode = 'search'
     let lastResults = []
+    let initialized = false
 
     ws.on('message', async (msg) => {
         try {
             const data = JSON.parse(msg.toString())
 
             if (data.type === 'init') {
+                if (initialized) return
+                initialized = true
+
                 username = data.username || 'Guest'
                 attempts = 0
                 mode = 'search'
@@ -63,7 +67,7 @@ wss.on('connection', (ws) => {
                             text: `Hello ${username}, enter a product name to search`
                         }
                     })
-                }, 800)
+                }, 500)
 
                 return
             }
@@ -77,9 +81,17 @@ wss.on('connection', (ws) => {
                     if (mode === 'select') {
                         const index = Number(text)
 
-                        if (!isNaN(index) && lastResults[index - 1]) {
-                            const product = lastResults[index - 1]
+                        let product = null
 
+                        if (!isNaN(index)) {
+                            product = lastResults[index - 1]
+                        } else {
+                            product = lastResults.find((p) =>
+                                p.title.toLowerCase().includes(text.toLowerCase())
+                            )
+                        }
+
+                        if (product) {
                             send(ws, {
                                 type: 'bot',
                                 payload: { text: formatProduct(product) }
@@ -95,16 +107,19 @@ wss.on('connection', (ws) => {
                                         text: 'You can search for another product'
                                     }
                                 })
-                            }, 800)
+                            }, 500)
 
                             return
-                        } else {
-                            send(ws, {
-                                type: 'bot',
-                                payload: { text: 'Please enter a valid number from the list' }
-                            })
-                            return
                         }
+
+                        send(ws, {
+                            type: 'bot',
+                            payload: {
+                                text: 'Enter a valid number or product name from the list'
+                            }
+                        })
+
+                        return
                     }
 
                     const result = await searchProducts(text)
@@ -122,6 +137,7 @@ wss.on('connection', (ws) => {
                             })
 
                             attempts = 0
+                            mode = 'search'
 
                             setTimeout(() => {
                                 send(ws, {
@@ -130,7 +146,7 @@ wss.on('connection', (ws) => {
                                         text: 'Try searching for a product again'
                                     }
                                 })
-                            }, 800)
+                            }, 500)
 
                             return
                         }
@@ -138,8 +154,7 @@ wss.on('connection', (ws) => {
                         send(ws, {
                             type: 'bot',
                             payload: {
-                                text:
-                                    'Sorry, no products found. Please try again'
+                                text: 'Sorry, no products found. Please try again'
                             }
                         })
 
@@ -169,7 +184,7 @@ wss.on('connection', (ws) => {
                     send(ws, {
                         type: 'bot',
                         payload: {
-                            text: `Found multiple products:\n${list}\n\nEnter number`
+                            text: `Found multiple products:\n${list}\n\nEnter number or name`
                         }
                     })
                 }, 1000)
