@@ -86,6 +86,7 @@ wss.on('connection', (ws) => {
                                     id: product.id,
                                     title: product.title,
                                     price: product.price,
+                                    thumbnail: product.thumbnail,
                                     brand: product.brand,
                                     category: product.category,
                                     rating: product.rating,
