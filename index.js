@@ -83,6 +83,7 @@ wss.on('connection', (ws) => {
                             send(ws, {
                                 type: 'product',
                                 payload: {
+                                    id: product.id,
                                     title: product.title,
                                     price: product.price,
                                     brand: product.brand,
