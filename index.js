@@ -21,7 +21,14 @@ function send(ws, data) {
 
 async function searchProducts(query) {
     const res = await fetch(`https://dummyjson.com/products/search?q=${encodeURIComponent(query)}`)
-    return res.json()
+    const data = await res.json()
+    const normalized = query.toLowerCase()
+    return {
+        ...data,
+        products: data.products.filter(p =>
+            p.title.toLowerCase().includes(normalized)
+        )
+    }
 }
 
 wss.on('connection', (ws) => {
@@ -94,10 +101,8 @@ wss.on('connection', (ws) => {
                                     returnPolicy: product.returnPolicy
                                 }
                             })
-
                             mode = 'search'
                             attempts = 0
-
                             setTimeout(() => {
                                 send(ws, {
                                     type: 'bot',
